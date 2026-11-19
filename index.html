@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>踩地雷</title>
+<title>六角踩地雷</title>
 <style>
   :root {
     --bg: #eef1f5;
@@ -51,15 +51,17 @@
     border: 1px solid var(--line); background: var(--bg); cursor: pointer; line-height: 1;
   }
   .board-wrap { overflow-x: auto; max-width: calc(100vw - 52px); }
-  #board { display: grid; gap: 2px; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
+  #board { position: relative; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
+  /* 尖頂六角形格子（pointy-top），奇數列往右偏移半格 */
   .cell {
-    width: 30px; height: 30px; border-radius: 4px;
+    position: absolute; width: 32px; height: 37px;
+    clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
     background: var(--cell); display: flex; align-items: center; justify-content: center;
-    font-weight: 800; font-size: 16px; cursor: pointer;
+    font-weight: 800; font-size: 15px; cursor: pointer;
     transition: background .08s;
   }
   .cell:hover:not(.open) { background: var(--cell-hover); }
-  .cell.open { background: var(--open); cursor: default; box-shadow: inset 0 0 0 1px var(--line); }
+  .cell.open { background: #e8edf3; cursor: default; }
   .cell.boom { background: var(--boom) !important; }
   .cell.wrong { background: #ffd8d8; }
   .n1 { color: #2563eb; } .n2 { color: #16a34a; } .n3 { color: #dc2626; } .n4 { color: #1e3a8a; }
@@ -94,7 +96,7 @@
 </style>
 </head>
 <body>
-  <h1>💣 踩地雷</h1>
+  <h1>⬢ 六角踩地雷</h1>
 
   <div class="controls" id="levels">
     <button data-level="easy" class="active">初級 9×9</button>
@@ -127,6 +129,7 @@
     左鍵翻開格子・右鍵插旗／取消<br>
     點已翻開的數字：若周圍旗數相符，會自動翻開其餘格子<br>
     手機：長按插旗，或開啟「插旗模式」<br>
+    每個六角格最多有 6 個鄰居，數字範圍為 1–6<br>
     第一下保證不會踩到地雷
   </p>
 
@@ -139,6 +142,11 @@
   </div>
 
 <script>
+// 六角格幾何：格寬 W、格高 H，列距 = (H + GAP) × 3/4（尖頂六角形可互相嵌合）
+const W = 32, H = 37, GAP = 2;
+const STEP_X = W + GAP;
+const STEP_Y = (H + GAP) * 0.75;
+
 const LEVELS = {
   easy:   { rows: 9,  cols: 9,  mines: 10 },
   medium: { rows: 16, cols: 16, mines: 40 },
@@ -162,14 +170,15 @@ function pad(n) {
   return n < 0 ? '-' + s.slice(1) : s;
 }
 
+// odd-r 偏移座標（奇數列右移半格）：每格只有 6 個鄰居
+const NB_EVEN = [[0, -1], [0, 1], [-1, -1], [-1, 0], [1, -1], [1, 0]];
+const NB_ODD  = [[0, -1], [0, 1], [-1, 0], [-1, 1], [1, 0], [1, 1]];
 function neighbors(r, c) {
   const out = [];
-  for (let dr = -1; dr <= 1; dr++)
-    for (let dc = -1; dc <= 1; dc++) {
-      if (!dr && !dc) continue;
-      const nr = r + dr, nc = c + dc;
-      if (nr >= 0 && nr < cfg.rows && nc >= 0 && nc < cfg.cols) out.push([nr, nc]);
-    }
+  for (const [dr, dc] of (r % 2 ? NB_ODD : NB_EVEN)) {
+    const nr = r + dr, nc = c + dc;
+    if (nr >= 0 && nr < cfg.rows && nc >= 0 && nc < cfg.cols) out.push([nr, nc]);
+  }
   return out;
 }
 
@@ -184,13 +193,16 @@ function newGame() {
   grid = Array.from({ length: cfg.rows }, () =>
     Array.from({ length: cfg.cols }, () => ({ mine: false, open: false, flag: false, n: 0 })));
 
-  boardEl.style.gridTemplateColumns = `repeat(${cfg.cols}, 30px)`;
+  boardEl.style.width = `${cfg.cols * STEP_X + STEP_X / 2}px`;
+  boardEl.style.height = `${(cfg.rows - 1) * STEP_Y + H + GAP}px`;
   boardEl.innerHTML = '';
   for (let r = 0; r < cfg.rows; r++)
     for (let c = 0; c < cfg.cols; c++) {
       const d = document.createElement('div');
       d.className = 'cell';
       d.dataset.r = r; d.dataset.c = c;
+      d.style.left = `${c * STEP_X + (r % 2 ? STEP_X / 2 : 0) + GAP / 2}px`;
+      d.style.top = `${r * STEP_Y + GAP / 2}px`;
       boardEl.appendChild(d);
     }
   showBest();
@@ -202,7 +214,7 @@ function cellEl(r, c) { return boardEl.children[r * cfg.cols + c]; }
 function placeMines(sr, sc) {
   const safe = new Set([sr * cfg.cols + sc]);
   const total = cfg.rows * cfg.cols;
-  if (total - cfg.mines >= 9) neighbors(sr, sc).forEach(([r, c]) => safe.add(r * cfg.cols + c));
+  if (total - cfg.mines >= 7) neighbors(sr, sc).forEach(([r, c]) => safe.add(r * cfg.cols + c));
   const pool = [];
   for (let i = 0; i < total; i++) if (!safe.has(i)) pool.push(i);
   for (let i = pool.length - 1; i > 0; i--) {
@@ -316,10 +328,10 @@ function checkWin() {
 }
 
 function getBest() {
-  try { const v = localStorage.getItem('ms-best-' + cfg.key); return v === null ? null : +v; }
+  try { const v = localStorage.getItem('hexms-best-' + cfg.key); return v === null ? null : +v; }
   catch { return null; }
 }
-function setBest(v) { try { localStorage.setItem('ms-best-' + cfg.key, v); } catch {} }
+function setBest(v) { try { localStorage.setItem('hexms-best-' + cfg.key, v); } catch {} }
 function showBest() {
   const b = cfg.key === 'custom' ? null : getBest();
   document.getElementById('best').textContent = b === null ? '' : `最佳紀錄：${b} 秒`;
