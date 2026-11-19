@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>踩地雷</title>
+<style>
+  :root {
+    --bg: #eef1f5;
+    --panel: #ffffff;
+    --ink: #1f2933;
+    --muted: #6b7785;
+    --cell: #c9d3df;
+    --cell-hover: #b8c4d3;
+    --open: #f7f9fb;
+    --line: #dde3ea;
+    --accent: #2f6fde;
+    --boom: #e5484d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh;
+    font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+    background: var(--bg); color: var(--ink);
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 12px;
+  }
+  h1 { margin: 0 0 14px; font-size: 26px; letter-spacing: 2px; }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-bottom: 14px; }
+  .controls button {
+    border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+    padding: 7px 14px; border-radius: 8px; cursor: pointer; font-size: 14px; font-family: inherit;
+  }
+  .controls button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .game {
+    background: var(--panel); border-radius: 14px; padding: 14px;
+    box-shadow: 0 6px 24px rgba(20, 30, 50, .08);
+    max-width: 100%;
+  }
+  .status {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 12px; gap: 12px;
+  }
+  .counter {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 22px; font-weight: 700; background: #1f2933; color: #ff5a5a;
+    padding: 4px 10px; border-radius: 6px; min-width: 70px; text-align: center;
+  }
+  #face {
+    font-size: 26px; width: 46px; height: 46px; border-radius: 50%;
+    border: 1px solid var(--line); background: var(--bg); cursor: pointer; line-height: 1;
+  }
+  .board-wrap { overflow-x: auto; max-width: calc(100vw - 52px); }
+  #board { display: grid; gap: 2px; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
+  .cell {
+    width: 30px; height: 30px; border-radius: 4px;
+    background: var(--cell); display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 16px; cursor: pointer;
+    transition: background .08s;
+  }
+  .cell:hover:not(.open) { background: var(--cell-hover); }
+  .cell.open { background: var(--open); cursor: default; box-shadow: inset 0 0 0 1px var(--line); }
+  .cell.boom { background: var(--boom) !important; }
+  .cell.wrong { background: #ffd8d8; }
+  .n1 { color: #2563eb; } .n2 { color: #16a34a; } .n3 { color: #dc2626; } .n4 { color: #1e3a8a; }
+  .n5 { color: #9a3412; } .n6 { color: #0e7490; } .n7 { color: #111827; } .n8 { color: #6b7280; }
+  .bottom { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; gap: 10px; flex-wrap: wrap; }
+  #flagMode {
+    border: 1px solid var(--line); background: var(--bg); border-radius: 8px;
+    padding: 6px 12px; font-size: 14px; cursor: pointer; font-family: inherit; color: var(--ink);
+  }
+  #flagMode.on { background: #fff3cd; border-color: #f0c36d; }
+  .best { font-size: 13px; color: var(--muted); }
+  .help { margin-top: 16px; font-size: 13px; color: var(--muted); text-align: center; line-height: 1.7; max-width: 520px; }
+  .overlay {
+    position: fixed; inset: 0; background: rgba(20,30,50,.35);
+    display: none; align-items: center; justify-content: center; z-index: 10;
+  }
+  .overlay.show { display: flex; }
+  .dialog {
+    background: var(--panel); border-radius: 14px; padding: 24px 28px; text-align: center;
+    box-shadow: 0 10px 40px rgba(0,0,0,.2); min-width: 240px;
+  }
+  .dialog h2 { margin: 0 0 8px; }
+  .dialog p { margin: 0 0 16px; color: var(--muted); }
+  .dialog button {
+    background: var(--accent); color: #fff; border: 0; padding: 9px 20px;
+    border-radius: 8px; font-size: 15px; cursor: pointer; font-family: inherit;
+  }
+  .custom { display: none; gap: 6px; align-items: center; justify-content: center; flex-wrap: wrap; margin-bottom: 14px; font-size: 14px; }
+  .custom.show { display: flex; }
+  .custom input { width: 58px; padding: 5px; border: 1px solid var(--line); border-radius: 6px; font-family: inherit; }
+  .custom button { padding: 6px 12px; border-radius: 6px; border: 0; background: var(--accent); color: #fff; cursor: pointer; font-family: inherit; }
+</style>
+</head>
+<body>
+  <h1>💣 踩地雷</h1>
+
+  <div class="controls" id="levels">
+    <button data-level="easy" class="active">初級 9×9</button>
+    <button data-level="medium">中級 16×16</button>
+    <button data-level="hard">高級 16×30</button>
+    <button data-level="custom">自訂</button>
+  </div>
+
+  <div class="custom" id="customBox">
+    列 <input type="number" id="cRows" min="5" max="30" value="12">
+    行 <input type="number" id="cCols" min="5" max="40" value="12">
+    地雷 <input type="number" id="cMines" min="1" value="20">
+    <button id="cGo">開始</button>
+  </div>
+
+  <div class="game">
+    <div class="status">
+      <div class="counter" id="mineCount">010</div>
+      <button id="face" title="重新開始">🙂</button>
+      <div class="counter" id="timer">000</div>
+    </div>
+    <div class="board-wrap"><div id="board"></div></div>
+    <div class="bottom">
+      <button id="flagMode">🚩 插旗模式：關</button>
+      <span class="best" id="best"></span>
+    </div>
+  </div>
+
+  <p class="help">
+    左鍵翻開格子・右鍵插旗／取消<br>
+    點已翻開的數字：若周圍旗數相符，會自動翻開其餘格子<br>
+    手機：長按插旗，或開啟「插旗模式」<br>
+    第一下保證不會踩到地雷
+  </p>
+
+  <div class="overlay" id="overlay">
+    <div class="dialog">
+      <h2 id="dTitle"></h2>
+      <p id="dText"></p>
+      <button id="dBtn">再玩一次</button>
+    </div>
+  </div>
+
+<script>
+const LEVELS = {
+  easy:   { rows: 9,  cols: 9,  mines: 10 },
+  medium: { rows: 16, cols: 16, mines: 40 },
+  hard:   { rows: 16, cols: 30, mines: 99 },
+};
+
+let cfg = { ...LEVELS.easy, key: 'easy' };
+let grid = [];          // {mine, open, flag, n}
+let started = false, over = false;
+let opened = 0, flags = 0;
+let seconds = 0, timerId = null;
+let flagMode = false;
+
+const boardEl = document.getElementById('board');
+const mineCountEl = document.getElementById('mineCount');
+const timerEl = document.getElementById('timer');
+const face = document.getElementById('face');
+
+function pad(n) {
+  const s = Math.abs(Math.min(999, n)).toString().padStart(3, '0');
+  return n < 0 ? '-' + s.slice(1) : s;
+}
+
+function neighbors(r, c) {
+  const out = [];
+  for (let dr = -1; dr <= 1; dr++)
+    for (let dc = -1; dc <= 1; dc++) {
+      if (!dr && !dc) continue;
+      const nr = r + dr, nc = c + dc;
+      if (nr >= 0 && nr < cfg.rows && nc >= 0 && nc < cfg.cols) out.push([nr, nc]);
+    }
+  return out;
+}
+
+function newGame() {
+  clearInterval(timerId);
+  timerId = null;
+  started = false; over = false;
+  opened = 0; flags = 0; seconds = 0;
+  face.textContent = '🙂';
+  timerEl.textContent = pad(0);
+  mineCountEl.textContent = pad(cfg.mines);
+  grid = Array.from({ length: cfg.rows }, () =>
+    Array.from({ length: cfg.cols }, () => ({ mine: false, open: false, flag: false, n: 0 })));
+
+  boardEl.style.gridTemplateColumns = `repeat(${cfg.cols}, 30px)`;
+  boardEl.innerHTML = '';
+  for (let r = 0; r < cfg.rows; r++)
+    for (let c = 0; c < cfg.cols; c++) {
+      const d = document.createElement('div');
+      d.className = 'cell';
+      d.dataset.r = r; d.dataset.c = c;
+      boardEl.appendChild(d);
+    }
+  showBest();
+}
+
+function cellEl(r, c) { return boardEl.children[r * cfg.cols + c]; }
+
+// Place mines after first click, keeping the clicked cell and its neighbours safe.
+function placeMines(sr, sc) {
+  const safe = new Set([sr * cfg.cols + sc]);
+  const total = cfg.rows * cfg.cols;
+  if (total - cfg.mines >= 9) neighbors(sr, sc).forEach(([r, c]) => safe.add(r * cfg.cols + c));
+  const pool = [];
+  for (let i = 0; i < total; i++) if (!safe.has(i)) pool.push(i);
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  pool.slice(0, cfg.mines).forEach(i => grid[Math.floor(i / cfg.cols)][i % cfg.cols].mine = true);
+  for (let r = 0; r < cfg.rows; r++)
+    for (let c = 0; c < cfg.cols; c++)
+      grid[r][c].n = neighbors(r, c).filter(([a, b]) => grid[a][b].mine).length;
+}
+
+function startTimer() {
+  timerId = setInterval(() => { seconds++; timerEl.textContent = pad(seconds); }, 1000);
+}
+
+function render(r, c) {
+  const g = grid[r][c], el = cellEl(r, c);
+  el.className = 'cell';
+  el.textContent = '';
+  if (g.open) {
+    el.classList.add('open');
+    if (g.mine) el.textContent = '💣';
+    else if (g.n) { el.textContent = g.n; el.classList.add('n' + g.n); }
+  } else if (g.flag) {
+    el.textContent = '🚩';
+  }
+}
+
+function reveal(r, c) {
+  const stack = [[r, c]];
+  while (stack.length) {
+    const [y, x] = stack.pop();
+    const g = grid[y][x];
+    if (g.open || g.flag) continue;
+    g.open = true; opened++;
+    render(y, x);
+    if (g.mine) return lose(y, x);
+    if (g.n === 0) neighbors(y, x).forEach(p => stack.push(p));
+  }
+}
+
+function openCell(r, c) {
+  if (over) return;
+  const g = grid[r][c];
+  if (g.flag) return;
+  if (!started) {
+    placeMines(r, c);
+    started = true;
+    startTimer();
+  }
+  if (g.open) { chord(r, c); }
+  else reveal(r, c);
+  checkWin();
+}
+
+function chord(r, c) {
+  const g = grid[r][c];
+  if (!g.n) return;
+  const nb = neighbors(r, c);
+  const f = nb.filter(([a, b]) => grid[a][b].flag).length;
+  if (f !== g.n) return;
+  for (const [a, b] of nb) {
+    if (over) return;
+    if (!grid[a][b].open && !grid[a][b].flag) reveal(a, b);
+  }
+}
+
+function toggleFlag(r, c) {
+  if (over) return;
+  const g = grid[r][c];
+  if (g.open) return;
+  g.flag = !g.flag;
+  flags += g.flag ? 1 : -1;
+  mineCountEl.textContent = pad(cfg.mines - flags);
+  render(r, c);
+}
+
+function lose(r, c) {
+  over = true;
+  clearInterval(timerId);
+  face.textContent = '😵';
+  for (let y = 0; y < cfg.rows; y++)
+    for (let x = 0; x < cfg.cols; x++) {
+      const g = grid[y][x];
+      if (g.mine && !g.flag) { g.open = true; render(y, x); }
+      if (!g.mine && g.flag) { const el = cellEl(y, x); el.textContent = '❌'; el.classList.add('wrong'); }
+    }
+  cellEl(r, c).classList.add('boom');
+  setTimeout(() => dialog('踩到地雷了！', `用時 ${seconds} 秒，再接再厲 💪`), 450);
+}
+
+function checkWin() {
+  if (over) return;
+  if (opened === cfg.rows * cfg.cols - cfg.mines) {
+    over = true;
+    clearInterval(timerId);
+    face.textContent = '😎';
+    for (let y = 0; y < cfg.rows; y++)
+      for (let x = 0; x < cfg.cols; x++)
+        if (grid[y][x].mine && !grid[y][x].flag) { grid[y][x].flag = true; render(y, x); }
+    mineCountEl.textContent = pad(0);
+    let msg = `用時 ${seconds} 秒`;
+    if (cfg.key !== 'custom') {
+      const prev = getBest();
+      if (prev === null || seconds < prev) { setBest(seconds); msg += '　🏆 新紀錄！'; }
+    }
+    showBest();
+    setTimeout(() => dialog('你贏了！🎉', msg), 300);
+  }
+}
+
+function getBest() {
+  try { const v = localStorage.getItem('ms-best-' + cfg.key); return v === null ? null : +v; }
+  catch { return null; }
+}
+function setBest(v) { try { localStorage.setItem('ms-best-' + cfg.key, v); } catch {} }
+function showBest() {
+  const b = cfg.key === 'custom' ? null : getBest();
+  document.getElementById('best').textContent = b === null ? '' : `最佳紀錄：${b} 秒`;
+}
+
+function dialog(title, text) {
+  document.getElementById('dTitle').textContent = title;
+  document.getElementById('dText').textContent = text;
+  document.getElementById('overlay').classList.add('show');
+}
+document.getElementById('dBtn').onclick = () => {
+  document.getElementById('overlay').classList.remove('show');
+  newGame();
+};
+
+// ---- Input ----
+let pressTimer = null, longPressed = false;
+
+boardEl.addEventListener('click', e => {
+  const t = e.target.closest('.cell'); if (!t) return;
+  if (longPressed) { longPressed = false; return; }
+  const r = +t.dataset.r, c = +t.dataset.c;
+  if (flagMode && !grid[r][c].open) toggleFlag(r, c);
+  else openCell(r, c);
+});
+boardEl.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  const t = e.target.closest('.cell'); if (!t) return;
+  toggleFlag(+t.dataset.r, +t.dataset.c);
+});
+boardEl.addEventListener('mousedown', e => {
+  if (!over && e.button === 0 && e.target.closest('.cell')) face.textContent = '😮';
+});
+document.addEventListener('mouseup', () => { if (!over) face.textContent = '🙂'; });
+
+boardEl.addEventListener('touchstart', e => {
+  const t = e.target.closest('.cell'); if (!t) return;
+  longPressed = false;
+  pressTimer = setTimeout(() => {
+    longPressed = true;
+    toggleFlag(+t.dataset.r, +t.dataset.c);
+    if (navigator.vibrate) try { navigator.vibrate(30); } catch {}
+  }, 400);
+}, { passive: true });
+['touchend', 'touchmove', 'touchcancel'].forEach(ev =>
+  boardEl.addEventListener(ev, () => clearTimeout(pressTimer), { passive: true }));
+
+face.onclick = newGame;
+
+const flagBtn = document.getElementById('flagMode');
+flagBtn.onclick = () => {
+  flagMode = !flagMode;
+  flagBtn.classList.toggle('on', flagMode);
+  flagBtn.textContent = `🚩 插旗模式：${flagMode ? '開' : '關'}`;
+};
+
+document.getElementById('levels').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  document.querySelectorAll('#levels button').forEach(x => x.classList.toggle('active', x === b));
+  const lv = b.dataset.level;
+  document.getElementById('customBox').classList.toggle('show', lv === 'custom');
+  if (lv !== 'custom') { cfg = { ...LEVELS[lv], key: lv }; newGame(); }
+});
+
+document.getElementById('cGo').onclick = () => {
+  const rows = Math.max(5, Math.min(30, +document.getElementById('cRows').value || 9));
+  const cols = Math.max(5, Math.min(40, +document.getElementById('cCols').value || 9));
+  const mines = Math.max(1, Math.min(rows * cols - 1, +document.getElementById('cMines').value || 10));
+  document.getElementById('cRows').value = rows;
+  document.getElementById('cCols').value = cols;
+  document.getElementById('cMines').value = mines;
+  cfg = { rows, cols, mines, key: 'custom' };
+  newGame();
+};
+
+newGame();
+</script>
+</body>
+</html>
